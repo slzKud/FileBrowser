@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Browser</title>
+    <style>
+        :root {
+            --primary: #4361ee;
+            --secondary: #3f37c9;
+            --success: #4cc9f0;
+            --danger: #f72585;
+            --light: #f8f9fa;
+            --dark: #212529;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background-color: #f5f7ff;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .path-nav {
+            background-color: var(--light);
+            padding: 15px 20px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .breadcrumb {
+            display: flex;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            flex-wrap: wrap;
+        }
+        
+        .breadcrumb-item {
+            display: flex;
+            align-items: center;
+        }
+        
+        .breadcrumb-item a {
+            color: var(--primary);
+            text-decoration: none;
+            padding: 5px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        .breadcrumb-item a:hover {
+            background-color: rgba(67, 97, 238, 0.1);
+        }
+        
+        .breadcrumb-item::after {
+            content: '/';
+            margin: 0 8px;
+            color: #6c757d;
+        }
+        
+        .breadcrumb-item:last-child::after {
+            content: none;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            padding: 15px 20px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+        
+        .file-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            border-bottom: 1px solid #e9ecef;
+            transition: background-color 0.2s;
+        }
+        
+        .file-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .file-icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 20px;
+            color: #6c757d;
+        }
+        
+        .file-info {
+            flex-grow: 1;
+        }
+        
+        .file-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        
+        .file-size {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+        
+        .file-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #6c757d;
+            font-size: 18px;
+            transition: color 0.2s;
+        }
+        
+        .action-btn:hover {
+            color: var(--primary);
+        }
+        
+        .folder {
+            cursor: pointer;
+        }
+        
+        .folder:hover .file-name {
+            color: var(--primary);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-content {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 500px;
+            overflow: hidden;
+        }
+        
+        .modal-header {
+            padding: 20px;
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        .modal-footer {
+            padding: 15px 20px;
+            background-color: #f8f9fa;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .progress-bar {
+            height: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background-color: var(--success);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .upload-status {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+            }
+            
+            .file-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .file-actions {
+                margin-top: 10px;
+                width: 100%;
+                justify-content: flex-end;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>File Browser</h1>
+            <div class="current-path" id="current-path">/</div>
+        </header>
+        
+        <div class="path-nav">
+            <ul class="breadcrumb" id="breadcrumb"></ul>
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-primary" onclick="openUploadModal()">
+                <i>&#128193;</i> Upload File
+            </button>
+            <button class="btn btn-primary" onclick="openFolderModal()">
+                <i>&#128193;</i> Create Folder
+            </button>
+            <button class="btn btn-primary" onclick="refreshList()">
+                <i>&#128260;</i> Refresh
+            </button>
+        </div>
+        
+        <ul class="file-list" id="file-list"></ul>
+    </div>
+    
+    <!-- Upload Modal -->
+    <div class="modal" id="upload-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Upload File</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="file-input">Select File</label>
+                    <input type="file" id="file-input" class="form-control">
+                </div>
+                <div class="progress-container" id="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="upload-status" id="upload-status">0%</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('upload-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="uploadFile()">Upload</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Folder Modal -->
+    <div class="modal" id="folder-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create Folder</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="folder-name">Folder Name</label>
+                    <input type="text" id="folder-name" class="form-control" placeholder="Enter folder name">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('folder-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="createFolder()">Create</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Rename Modal -->
+    <div class="modal" id="rename-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Rename</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="new-name">New Name</label>
+                    <input type="text" id="new-name" class="form-control">
+                </div>
+                <input type="hidden" id="rename-type">
+                <input type="hidden" id="original-name">
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('rename-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="performRename()">Rename</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentPath = '';
+        let currentBreadcrumbs = [];
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDirectory('.');
+        });
+        
+        // 加载目录内容
+        function loadDirectory(path) {
+            currentPath = path;
+            document.getElementById('current-path').textContent = path;
+            
+            // 更新面包屑导航
+            updateBreadcrumbs(path);
+            
+            // 获取文件列表
+            fetch(`/browse?path=${encodeURIComponent(path)}`)
+                .then(response => response.json())
+                .then(data => {
+                    renderFileList(data);
+                })
+                .catch(error => {
+                    console.error('Error loading directory:', error);
+                    alert('Failed to load directory');
+                });
+        }
+        
+        // 更新面包屑导航
+        function updateBreadcrumbs(path) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            breadcrumb.innerHTML = '';
+            
+            const parts = path.split('/').filter(p => p !== '');
+            let bredPath = '.';
+            
+            // 根目录
+            const rootItem = document.createElement('li');
+            rootItem.className = 'breadcrumb-item';
+            const rootLink = document.createElement('a');
+            rootLink.href = '#';
+            rootLink.textContent = 'Home';
+            rootLink.rel=".";
+            rootLink.onclick = () => loadDirectory(rootLink.rel);
+            rootItem.appendChild(rootLink);
+            breadcrumb.appendChild(rootItem);
+            
+            // 子目录
+            parts.forEach((part, index) => {
+                if(index>0){
+                    bredPath +=  '/' + part  ;
+                    
+                    const item = document.createElement('li');
+                    item.className = 'breadcrumb-item';
+                    
+                    const link = document.createElement('a');
+                    link.href = '#';
+                    link.textContent = part;
+                    link.rel=bredPath;
+                    link.onclick = () => loadDirectory(link.rel);
+                    
+                    item.appendChild(link);
+                    breadcrumb.appendChild(item);
+                }
+            });
+        }
+        
+        // 渲染文件列表
+        function renderFileList(files) {
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = '';
+            
+            // 先添加文件夹
+            files.filter(f => f.type === 'directory').forEach(folder => {
+                if(folder.name!=".."){
+                    const li = document.createElement('li');
+                    li.className = 'file-item folder';
+                    li.onclick = () => loadDirectory(currentPath + '/' + folder.name);
+                    
+                    li.innerHTML = `
+                        <div class="file-icon">&#128193;</div>
+                        <div class="file-info">
+                            <div class="file-name">${folder.name}</div>
+                            <div class="file-size">Folder</div>
+                        </div>
+                        <div class="file-actions">
+                            <button class="action-btn" title="Rename" onclick="openRenameModal('${folder.name}', 'folder', event)">&#9999;&#65039;</button>
+                            <button class="action-btn" title="Delete" onclick="deleteItem('${folder.name}', 'folder', event)">&#128465;&#65039;</button>
+                        </div>
+                    `;
+                    
+                    fileList.appendChild(li);
+                }else{
+                    const parts = currentPath.split('/').filter(p => p !== '');
+                    prevPath="."
+                    for(let i=1;i<(parts.length-1);i++){
+                        prevPath+="/"
+                        prevPath+=parts[i]
+                    }
+                    //console.log(parts,currentPath,prevPath)
+                    if(currentPath!="."){
+                        const li = document.createElement('li');
+                        li.className = 'file-item folder';
+                        li.rel=prevPath;
+                        li.onclick = () => loadDirectory(li.rel);
+                        
+                        li.innerHTML = `
+                            <div class="file-icon">&#128193;</div>
+                            <div class="file-info">
+                                <div class="file-name">${folder.name}</div>
+                                <div class="file-size">Folder</div>
+                            </div>
+                            <div class="file-actions">
+                                <button class="action-btn" title="Rename" onclick="openRenameModal('${folder.name}', 'folder', event)">&#9999;&#65039;</button>
+                                <button class="action-btn" title="Delete" onclick="deleteItem('${folder.name}', 'folder', event)">&#128465;&#65039;</button>
+                            </div>
+                        `;
+                        
+                        fileList.appendChild(li);
+                    }
+                }
+            });
+            
+            // 再添加文件
+            files.filter(f => f.type === 'file').forEach(file => {
+                const li = document.createElement('li');
+                li.className = 'file-item';
+                
+                // 格式化文件大小
+                let size = '';
+                if (file.size < 1024) {
+                    size = file.size + ' B';
+                } else if (file.size < 1024 * 1024) {
+                    size = (file.size / 1024).toFixed(2) + ' KB';
+                } else if (file.size < 1024 * 1024 * 1024) {
+                    size = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+                } else {
+                    size = (file.size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+                }
+                
+                li.innerHTML = `
+                    <div class="file-icon">&#128196;</div>
+                    <div class="file-info">
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-size">${size}</div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="action-btn" title="Download" onclick="downloadFile('${file.name}', event)">&#11015;&#65039;</button>
+                        <button class="action-btn" title="Rename" onclick="openRenameModal('${file.name}', 'file', event)">&#9999;&#65039;</button>
+                        <button class="action-btn" title="Delete" onclick="deleteItem('${file.name}', 'file', event)">&#128465;&#65039;</button>
+                    </div>
+                `;
+                
+                fileList.appendChild(li);
+            });
+        }
+        
+        // 刷新列表
+        function refreshList() {
+            loadDirectory(currentPath);
+        }
+        
+        // 打开上传模态框
+        function openUploadModal() {
+            document.getElementById('file-input').value = '';
+            document.getElementById('progress-container').style.display = 'none';
+            document.getElementById('progress-fill').style.width = '0%';
+            document.getElementById('upload-status').textContent = '0%';
+            document.getElementById('upload-modal').style.display = 'flex';
+        }
+        
+        // 打开文件夹模态框
+        function openFolderModal() {
+            document.getElementById('folder-name').value = '';
+            document.getElementById('folder-modal').style.display = 'flex';
+        }
+        
+        // 打开重命名模态框
+        function openRenameModal(name, type, event) {
+            event.stopPropagation();
+            document.getElementById('new-name').value = name;
+            document.getElementById('rename-type').value = type;
+            document.getElementById('original-name').value = name;
+            document.getElementById('rename-modal').style.display = 'flex';
+        }
+        
+        // 关闭模态框
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+        
+        // 上传文件
+        function uploadFile() {
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a file to upload');
+                return;
+            }
+            
+            const progressContainer = document.getElementById('progress-container');
+            const progressFill = document.getElementById('progress-fill');
+            const uploadStatus = document.getElementById('upload-status');
+            
+            progressContainer.style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('path', currentPath);
+            
+            const xhr = new XMLHttpRequest();
+            
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    progressFill.style.width = percent + '%';
+                    uploadStatus.textContent = percent + '%';
+                }
+            });
+            
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    setTimeout(() => {
+                        closeModal('upload-modal');
+                        refreshList();
+                    }, 500);
+                } else {
+                    alert('Upload failed: ' + xhr.responseText);
+                }
+            });
+            
+            xhr.addEventListener('error', () => {
+                alert('Upload failed');
+            });
+            
+            xhr.open('POST', '/upload');
+            xhr.send(formData);
+        }
+        
+        // 创建文件夹
+        function createFolder() {
+            const folderName = document.getElementById('folder-name').value.trim();
+            
+            if (!folderName) {
+                alert('Please enter a folder name');
+                return;
+            }
+            
+            fetch('/mkdir', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `path=${encodeURIComponent(currentPath)}&dirname=${encodeURIComponent(folderName)}`
+            })
+            .then(response => {
+                if (response.ok) {
+                    closeModal('folder-modal');
+                    refreshList();
+                } else {
+                    response.text().then(text => alert('Error: ' + text));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to create folder');
+            });
+        }
+        
+        // 执行重命名
+        function performRename() {
+            const newName = document.getElementById('new-name').value.trim();
+            const type = document.getElementById('rename-type').value;
+            const originalName = document.getElementById('original-name').value;
+            
+            if (!newName) {
+                alert('Please enter a new name');
+                return;
+            }
+            
+            const endpoint = type === 'file' ? '/rename' : '/rename';
+            
+            fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `path=${encodeURIComponent(currentPath)}&oldname=${encodeURIComponent(originalName)}&newname=${encodeURIComponent(newName)}`
+            })
+            .then(response => {
+                if (response.ok) {
+                    closeModal('rename-modal');
+                    refreshList();
+                } else {
+                    response.text().then(text => alert('Error: ' + text));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to rename');
+            });
+        }
+        
+        // 删除项目
+        function deleteItem(name, type, event) {
+            event.stopPropagation();
+            
+            if (!confirm(`Are you sure you want to delete ${name}?`)) {
+                return;
+            }
+            
+            const endpoint = type === 'file' ? '/delete' : '/delete_folder';
+            
+            fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `path=${encodeURIComponent(currentPath)}&name=${encodeURIComponent(name)}`
+            })
+            .then(response => {
+                if (response.ok) {
+                    refreshList();
+                } else {
+                    response.text().then(text => alert('Error: ' + text));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to delete');
+            });
+        }
+        
+        // 下载文件
+        function downloadFile(name, event) {
+            event.stopPropagation();
+            
+            const url = `/download?path=${encodeURIComponent(currentPath)}&filename=${encodeURIComponent(name)}`;
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
