@@ -391,12 +391,27 @@
     <script>
         let currentPath = '';
         let currentBreadcrumbs = [];
-
+        let CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+        let currentUploadID = "";
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
+            getConfig();
             loadDirectory('.');
         });
-
+        // 获取配置内容
+        function getConfig() {
+            fetch(`/config`)
+                .then(response => response.json())
+                .then(data => {
+                    if (CHUNK_SIZE != data.chunksize) {
+                        console.log("set chunk size:" + data.chunksize);
+                        CHUNK_SIZE = data.chunksize;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error Get Config:', error);
+                });
+        }
         // 加载目录内容
         function loadDirectory(path) {
             currentPath = path;
@@ -596,11 +611,50 @@
 
             progressContainer.style.display = 'block';
 
-            uploadFile_real(file,currentPath);
+            uploadFile_real(file, currentPath);
+        }
+        //发送合并文件的指令
+        async function uploadFile_merge(targetPath, filename, uploadId, totalChunks) {
+            console.log(targetPath, filename, uploadId, totalChunks);
+            const formData = new FormData();
+            formData.append('path', targetPath);
+            formData.append('filename', filename);
+            formData.append('upload_id', uploadId);
+            formData.append('total_chunks', totalChunks);
+            const response = await fetch('/upload/merge', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            currentUploadID=uploadId;
+            if (result.status === 'completed') {
+                console.log('merge completed:', result.upload_id);
+                document.getElementById('progress-fill').style.width = `100%`;
+                document.getElementById('upload-status').textContent = `100%`;
+
+                setTimeout(() => {
+                    closeModal('upload-modal');
+                    refreshList();
+                }, 500);
+                return;
+            }
+            if (result.status === 'merge') {
+                setTimeout(() => {
+                    uploadFile_merge(".", "1.txt", currentUploadID, 0);
+                }, 1000);
+            }
+            if (result.status === 'failed') {
+                console.log('merge failed:', result.filename);
+                alert("Merge file failed.")
+                setTimeout(() => {
+                    closeModal('upload-modal');
+                    refreshList();
+                }, 500);
+            }
         }
         // 分块上传文件
         async function uploadFile_real(file, targetPath) {
-            const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
             const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
             let uploadId = '';
 
@@ -629,14 +683,12 @@
                         uploadId = result.upload_id;
                     }
 
-                    if (result.status === 'completed') {
-                        console.log('Upload completed:', result.filename);
-                        document.getElementById('progress-fill').style.width = `100%`;
-                        document.getElementById('upload-status').textContent = `100%`;
-                        setTimeout(() => {
-                            closeModal('upload-modal');
-                            refreshList();
-                        }, 500);
+                    if (result.status === 'merge') {
+                        console.log('Upload Blocks completed, but file need to merge:', result.filename);
+                        document.getElementById('progress-fill').style.width = `95%`;
+                        document.getElementById('upload-status').textContent = `95%`;
+
+                        uploadFile_merge(targetPath,file.name,uploadId,totalChunks);
                         return;
                     }
 
@@ -654,7 +706,7 @@
 
         // 更新进度条
         function updateProgressBar(chunkIndex, totalChunks) {
-            const progress = Math.round((chunkIndex / totalChunks) * 100);
+            const progress = Math.round((chunkIndex / totalChunks) * 90);
             document.getElementById('progress-fill').style.width = `${progress}%`;
             document.getElementById('upload-status').textContent = `${progress}%`;
         }

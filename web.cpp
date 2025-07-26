@@ -8,17 +8,41 @@
 #include "httplib.h"
 #include <algorithm>
 #include <cctype>
+#include <pthread.h>
 
 #include "base64.h"
 #include "html.cc"
-
+#define NUM_THREADS 5
 namespace fs = std::filesystem;
 using namespace httplib;
+
+enum block_status{
+    SUCCESS = 1,
+    UNCOMPLTE =0,
+    FAILED = 2
+};
+struct block_info{
+    std::string upload_id;
+    std::string abs_path;
+    std::string filename;
+    int block_status_index;
+    int total_chunks;
+};
+
+struct merge_block_status{
+    std::string upload_id;
+    enum block_status status;
+};
 
 std::string BASE_DIR = "./files"; // 文件存储根目录
 const std::string TMP_DIR = "./tmp";
 unsigned int WEB_PORT = 8080;
 const size_t DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024; // 默认分块大小 5MB
+pthread_t threads[NUM_THREADS];
+int current_threads=0;
+struct merge_block_status block_status_list[NUM_THREADS];
+struct block_info gblk[NUM_THREADS];
+int current_block_status=0;
 
 // 创建存储目录
 void init_storage()
@@ -33,6 +57,15 @@ void init_storage()
     }
 }
 
+void init_block_status_list()
+{
+    int i=0;
+    while(i<NUM_THREADS){
+        block_status_list[i].upload_id="";
+        block_status_list[i].status=UNCOMPLTE;
+        i++;
+    }
+}
 // 生成随机ID
 std::string generate_upload_id()
 {
@@ -150,6 +183,64 @@ bool parse_cmd_arg(int argc, char *argv[])
     return false;
 }
 
+void *merge_upload_blocks_thread(void* pBlk)
+{
+    std::string final_path;
+    struct block_info *blk;
+    blk=(struct block_info *)pBlk;
+    final_path = blk->abs_path + "/" + blk->filename;
+    if (fs::exists(final_path))
+    {
+        // 如果文件已存在，添加后缀
+        int counter = 1;
+        std::string base_name = blk->filename;
+        std::string ext = "";
+
+        size_t dot_pos = blk->filename.find_last_of('.');
+        if (dot_pos != std::string::npos)
+        {
+            base_name = blk->filename.substr(0, dot_pos);
+            ext = blk->filename.substr(dot_pos);
+        }
+
+        do
+        {
+            std::ostringstream oss;
+            oss << base_name << " (" << counter << ")" << ext;
+            final_path = blk->abs_path + "/" + oss.str();
+            counter++;
+        } while (fs::exists(final_path));
+    }
+
+    if (!merge_chunks(blk->upload_id, blk->filename, blk->total_chunks, final_path))
+    {
+        block_status_list[blk->block_status_index].status=FAILED;
+        return NULL;
+    }
+    block_status_list[blk->block_status_index].status=SUCCESS;
+    return NULL;
+}
+bool merge_upload_blocks(std::string &upload_id,std::string &abs_path,std::string filename,int total_chunks){
+    int rc;
+    gblk[current_threads].upload_id=upload_id;
+    gblk[current_threads].abs_path=abs_path;
+    gblk[current_threads].filename=filename;
+    gblk[current_threads].total_chunks=total_chunks;
+    gblk[current_threads].block_status_index=current_block_status;
+    block_status_list[gblk[current_threads].block_status_index].upload_id=upload_id;
+    block_status_list[gblk[current_threads].block_status_index].status=UNCOMPLTE;
+    rc=pthread_create(&threads[current_threads], NULL, merge_upload_blocks_thread, (void *) &gblk[current_threads]);
+    //pthread_join(threads[current_threads], NULL);
+    if(current_block_status<(NUM_THREADS-1))
+        current_block_status++;
+    else
+        current_block_status=0;
+    if(current_threads<(NUM_THREADS-1))
+        current_threads++;
+    else
+        current_threads=0;
+    return true;
+}
 int main(int argc, char *argv[])
 {
     if (parse_cmd_arg(argc, argv))
@@ -158,6 +249,7 @@ int main(int argc, char *argv[])
     }
     std::cout << "Root Path:" << BASE_DIR << "\n";
     init_storage();
+    init_block_status_list();
     check_index_html(true);
     Server svr;
 
@@ -170,7 +262,9 @@ int main(int argc, char *argv[])
                 }else{
                     res.set_file_content("./index.html","text/html");
                 } });
-
+    // 配置信息获取
+    svr.Get("/config", [](const Request &req, Response &res)
+            { res.set_content("{\"chunksize\":" + std::to_string(DEFAULT_CHUNK_SIZE) + "}", "application/json"); });
     // 文件浏览接口（支持文件夹）
     svr.Get("/browse", [](const Request &req, Response &res)
             {
@@ -302,35 +396,9 @@ int main(int argc, char *argv[])
     std::string final_path;
     if (all_chunks_uploaded) {
         final_path = abs_path + "/" + filename;
-        if (fs::exists(final_path)) {
-            // 如果文件已存在，添加后缀
-            int counter = 1;
-            std::string base_name = filename;
-            std::string ext = "";
-            
-            size_t dot_pos = filename.find_last_of('.');
-            if (dot_pos != std::string::npos) {
-                base_name = filename.substr(0, dot_pos);
-                ext = filename.substr(dot_pos);
-            }
-            
-            do {
-                std::ostringstream oss;
-                oss << base_name << " (" << counter << ")" << ext;
-                final_path = abs_path + "/" + oss.str();
-                counter++;
-            } while (fs::exists(final_path));
-        }
-        
-        if (!merge_chunks(upload_id, filename, total_chunks, final_path)) {
-            res.status = 500;
-            res.set_content("{\"error\":\"Failed to merge chunks\"}", "application/json");
-            return;
-        }
-        
         // 返回成功响应
         res.set_content(
-            "{\"status\":\"completed\",\"upload_id\":\"" + upload_id + 
+            "{\"status\":\"merge\",\"upload_id\":\"" + upload_id + 
             "\",\"filename\":\"" + fs::path(final_path).filename().string() + "\"}", 
             "application/json"
         );
@@ -343,7 +411,59 @@ int main(int argc, char *argv[])
             "application/json"
         );
     } });
-
+    svr.Post("/upload/merge", [](const Request &req, Response &res) {
+        std::string path = req.form.get_field("path");
+        std::string filename = req.form.get_field("filename");
+        std::string upload_id = req.form.get_field("upload_id");
+        int total_chunks = -1;
+        int i = 0;
+        while(i<NUM_THREADS){
+            if(upload_id.compare(block_status_list[i].upload_id)==0){
+                if(block_status_list[i].status==SUCCESS){
+                    res.set_content(
+                        "{\"status\":\"completed\",\"upload_id\":\"" + upload_id + 
+                        "\"}", 
+                        "application/json"
+                    );
+                    return;
+                }else if(block_status_list[i].status==FAILED){
+                    res.set_content(
+                        "{\"status\":\"failed\",\"upload_id\":\"" + upload_id + 
+                        "\"}", 
+                        "application/json"
+                    );
+                    return;
+                }else if(block_status_list[i].status==UNCOMPLTE){
+                    res.set_content(
+                        "{\"status\":\"merge\",\"upload_id\":\"" + upload_id + 
+                        "\"}", 
+                        "application/json"
+                    );
+                    return;
+                }
+            }
+            i++;
+        }
+        std::string abs_path = resolve_path(path);
+        try {
+            total_chunks = std::stoi(req.form.get_field("total_chunks"));
+        } catch (...) {
+            res.status = 400;
+            res.set_content("{\"error\":\"Invalid chunk parameters\"}", "application/json");
+            return;
+        }
+        if (!fs::exists(abs_path) || !fs::is_directory(abs_path)) {
+            res.status = 404;
+            res.set_content("{\"error\":\"Directory not found\"}", "application/json");
+            return;
+        }
+        merge_upload_blocks(upload_id,abs_path,filename,total_chunks);
+        res.set_content(
+            "{\"status\":\"merge\",\"upload_id\":\"" + upload_id + 
+            "\"}", 
+            "application/json"
+        );
+    });
     // 获取上传进度
     svr.Get("/upload/progress", [](const Request &req, Response &res)
             {
@@ -471,8 +591,7 @@ int main(int argc, char *argv[])
                         sink.done();
 
                     return true;
-                }); 
-        });
+                }); });
 
     // 文件删除
     svr.Post("/delete", [](const Request &req, Response &res)
